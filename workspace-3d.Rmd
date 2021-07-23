@@ -1,0 +1,318 @@
+---
+title: "UCS654 Project: Sentiment Analysis and Customer Segmentation on Yelp Dataset"
+output:
+  html_document: default
+urlcolor: blue
+---
+Name: Vikram Alagh
+
+Roll number: 101803368
+
+Group: 3COE17
+
+Dataset name: Yelp Academic Dataset
+
+Dataset link (the tips and users data-sets from the json download are being worked on):
+https://www.yelp.com/dataset/
+
+\hfill\break
+
+# Sentiment analysis:
+
+\hfill\break
+\hfill\break
+\hfill\break
+
+### Reading first 1000 entries of tip dataset:
+#### This dataset contains "tips" from yelp users for businesses, these are short form reviews. 
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+review_file <- readLines("yelp_academic_dataset_tip.json", n = 1000)
+```
+\hfill\break
+\hfill\break
+
+### Loading the read entries into a json file for parsing:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(jsonlite)
+parsed_json <- jsonlite::stream_in(textConnection(review_file))
+```
+\hfill\break
+\hfill\break
+
+### Exporting parsed json to a tibble:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(tibble)
+parsed_json_tibble <- tibble::as_tibble(parsed_json)
+```
+\hfill\break
+\hfill\break
+
+### Extracting all review rows from data frame:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+parsed_json_tibble$unique_key <- paste(parsed_json_tibble$date, parsed_json_tibble$user_id) 
+tips <- dplyr::select(parsed_json_tibble, unique_key, text)
+
+print(tips[0:5, ])
+```
+\hfill\break
+\hfill\break
+
+### Splitting all tips into unigrams:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(tidytext)
+split_tips <- tidytext::unnest_tokens(tips, unigrams, text, token = "words", format = "text", to_lower = TRUE)
+```
+\hfill\break
+\hfill\break
+
+### Getting sentiments from AFINN attaching values from it to the unigrams in tips:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+afinn_sentiments <- tidytext::get_sentiments("afinn")
+tips_with_unigram_scores = merge(split_tips, afinn_sentiments, by.x = "unigrams", by.y = "word")
+
+tips_with_unigram_scores <- tips_with_unigram_scores[order(tips_with_unigram_scores$unique_key), ]
+
+print(tips_with_unigram_scores[0:10, ])
+```
+\hfill\break
+\hfill\break
+
+### Scoring all reviews based on sentiment:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+tips_with_score <- aggregate(tips_with_unigram_scores$value, by = list(unique_key = tips_with_unigram_scores$unique_key), FUN = sum)
+
+print(tips_with_score[0:10, ])
+```
+\hfill\break
+\hfill\break
+
+### Visualising all the review scores in descending order:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(ggplot2)
+
+ggplot(data = tips_with_score, aes(x = reorder(unique_key, -x), y = x)) + geom_bar(stat="identity") + xlab("reviews") + ylab("scores") + theme( axis.text.x=element_blank(), axis.ticks.x=element_blank())
+```
+\hfill\break
+\hfill\break
+
+### Finding top 10 most frequent positive and negative words; and top ten most positive and negative words (in terms of their score in AFINN); that appear in tips and plotting their frequencies:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+unique_unigrams <- dplyr::distinct(tips_with_unigram_scores, unigrams, .keep_all = TRUE)
+
+unique_unigrams <- merge(unique_unigrams, data.frame(table(tips_with_unigram_scores$unigrams)), by.x = "unigrams", by.y = "Var1")
+
+unique_unigrams$sentiments <- ifelse(unique_unigrams$value >= 0, "positive", "negative")
+
+top_pos <- dplyr::filter(unique_unigrams, sentiments == "positive")
+top_neg <- dplyr::filter(unique_unigrams, sentiments == "negative")
+```
+\hfill\break
+
+### Plotting top 10 positive and negative words (according to scores) with their frequencies in decreasing order of sentiment value (5, -5):
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+top_score_pos <- top_pos[order(-top_pos$val), ]
+top_score_neg <- top_neg[order(top_neg$val), ]
+
+top10_score_posneg = rbind(top_score_neg[0:10, ], top_score_pos[0:10, ])
+top10_score_posneg <- top10_score_posneg[order(top10_score_posneg$value), ]
+
+print(top10_score_posneg)
+
+library(ggplot2)
+
+ggplot(data = top10_score_posneg, aes(x = Freq, y = reorder(unigrams, value))) + geom_bar(stat="identity") + xlab("frequencies") + ylab("words")
+```
+\hfill\break
+
+### Plotting top 10 most frequent positive and negative words with their frequencies in decreasing order of sentiment value (5, -5):
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+top_freq_pos <- top_pos[order(-top_pos$Freq), ]
+top_freq_neg <- top_neg[order(-top_neg$Freq), ]
+
+top10_freq_posneg = rbind(top_freq_neg[0:10, ], top_freq_pos[0:10, ])
+top10_freq_posneg <- top10_freq_posneg[order(top10_freq_posneg$value), ]
+
+print(top10_freq_posneg)
+
+library(ggplot2)
+
+ggplot(data = top10_freq_posneg, aes(x = Freq, y = reorder(unigrams, value))) + geom_bar(stat="identity") + xlab("frequencies") + ylab("words")
+```
+\hfill\break
+\hfill\break
+
+### Making a word cloud of top 10 positive and negative words (according to AFINN score):
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(reshape2)
+library(wordcloud)
+
+acast(top10_score_posneg, unigrams ~ sentiments, value.var = "Freq", fill = 0) %>% comparison.cloud(colors = c("red", "dark green"), max.words = 100)
+```
+\hfill\break
+
+### Making a word cloud of top 10 most frequent positive and negative words:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+
+acast(top10_freq_posneg, unigrams ~ sentiments, value.var = "Freq", fill = 0) %>% comparison.cloud(colors = c("red", "dark green"), max.words = 100)
+```
+\hfill\break
+\hfill\break
+\hfill\break
+
+# Customer Segmentation:
+
+\hfill\break
+\hfill\break
+\hfill\break
+
+### Reading first 100 entries of users dataset:
+#### This dataset contains user information related to their reviews including the kinds of reactions their reviews generated in other users. 
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+user_file <- readLines("yelp_academic_dataset_user.json", n = 100)
+```
+\hfill\break
+\hfill\break
+
+### Loading the read entries into a json file for parsing:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(jsonlite)
+parsed_json <- jsonlite::stream_in(textConnection(user_file))
+```
+\hfill\break
+\hfill\break
+
+### Exporting parsed json to a tibble:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(tibble)
+parsed_json_tibble <- tibble::as_tibble(parsed_json)
+```
+\hfill\break
+\hfill\break
+
+### Removing unused columns from parsed tibble:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+user_data <- dplyr::select(parsed_json_tibble, -friends, -elite, -yelping_since)
+print(user_data[0:10, ])
+```
+\hfill\break
+\hfill\break
+
+### Summary of average user ratings
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+summary(user_data$average_stars)
+```
+\hfill\break
+\hfill\break
+
+### Generating histogram for average user ratings
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(ggplot2)
+ggplot(user_data, aes(x = average_stars)) + geom_histogram(binwidth = 0.25) + xlab("average ratings out of 5") + ylab("frequencies")
+```
+\hfill\break
+\hfill\break
+
+### Density plot for average ratings
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+ggplot(user_data, aes(x = average_stars)) + geom_density(fill = "white")
+```
+\hfill\break
+\hfill\break
+
+### Box plot for average ratings
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+ggplot(user_data, aes(y = average_stars)) + geom_boxplot() + xlim(-1, 1) + ylab("average ratings out of 5") + theme(axis.text.x = element_blank())
+```
+
+\hfill\break
+\hfill\break
+
+### Finding averages of compliment recieved columns in user_data:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+user_data_compliments <- dplyr::select(user_data, contains("compliment"))
+print(sort(colMeans(user_data_compliments)))
+```
+
+\hfill\break
+\hfill\break
+
+### Using K-means to group the user data using all compliments recieved by user:
+
+\hfill\break
+
+#### Plotting curve of number of clusters v/s intra cluster square of sum to execute elbow method to find optimal number of clusters:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60), message=FALSE, warning=FALSE}
+library(purrr)
+set.seed(243)
+      
+intra_cluster_square_sums <- function(k) {
+  invisible(kmeans(user_data_compliments, k, iter.max = 200, nstart = 256, algorithm = "Lloyd" ))$tot.withinss
+}
+
+k_values <- 1:11
+
+intra_cluster_square_sums_values <- map_dbl(k_values, intra_cluster_square_sums)
+
+plot_points = data.frame(x = k_values, y = intra_cluster_square_sums_values)
+
+ggplot(plot_points, aes(x = x, y = y)) + geom_line() + geom_point() +xlab("number of clusters") + ylab("intra cluster sum of squares") + scale_x_continuous(labels = min(plot_points["x"]):max(plot_points["x"]), breaks = min(plot_points["x"]):max(plot_points["x"]))
+
+```
+
+\hfill\break
+
+##### Elbow point is 3, therefore optimal number of clusters according to this method is 3
+
+\hfill\break
+\hfill\break
+
+#### Using silhouette method to find optimal number of clusters:
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60), message=FALSE, warning=FALSE}
+library(cluster) 
+library(gridExtra)
+library(grid)
+
+silhouette_width <- function(k) {
+  k_ <- kmeans(user_data_compliments, k, iter.max = 200, nstart = 256, algorithm = "Lloyd")
+  s_ <- silhouette(k_$cluster, dist(user_data_compliments, "euclidean"))
+  mean(s_[, 3])
+}
+
+
+k_values = 2:11
+avg_widths <- map_dbl(k_values, silhouette_width)
+plot_points = data.frame(x = k_values, y = avg_widths)
+
+print(avg_widths)
+
+ggplot(plot_points, aes(x = x, y = y)) + geom_line() + geom_point() +xlab("number of clusters") + ylab("average silhouette widths") + scale_x_continuous(labels = min(plot_points["x"]):max(plot_points["x"]), breaks = min(plot_points["x"]):max(plot_points["x"]))
+```
+\hfill\break
+
+##### Max average silhouette width is 0.895 for 2 clusters, therefore 2 clusters is the optimal solution for this method
+
+\hfill\break
+\hfill\break
+
+### Plotting K-Means clusters in 3d using values for number of clusters computed from above, the compliments with the most mean are used namely: cool, funny and plain
+#### Plotting for 3 clusters
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60), message=FALSE, warning=FALSE}
+library(plotly)
+
+user_data_compliments$cluster = factor(kmeans(user_data_compliments, 3)$cluster)
+
+plot_ly(user_data_compliments, x = ~compliment_cool, y = ~compliment_funny, 
+z = ~compliment_plain, color = ~cluster) %>% add_markers(size=1.5)
+
+```
+
+\hfill\break
+\hfill\break
+
+#### Plotting for 2 clusters
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60), message=FALSE, warning=FALSE}
+user_data_compliments$cluster = factor(kmeans(user_data_compliments, 2)$cluster)
+
+plot_ly(user_data_compliments, x = ~compliment_cool, y = ~compliment_funny, 
+z = ~compliment_plain, color = ~cluster) %>% add_markers(size=1.5)
+```

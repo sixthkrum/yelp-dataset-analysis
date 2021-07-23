@@ -1,0 +1,3 @@
+Performing sentiment analysis and customer segmentation on Yelp academic dataset https://www.yelp.com/dataset.
+Uses yelp_academic_dataset_tip.json and yelp_academic_dataset_tip.json from the dataset archive.
+
